@@ -30,10 +30,10 @@ public class PaymentService {
     private final PaymentRepository paymentRepository;
     private final BookingRepository bookingRepository;
 
-    @Value("${razorpay.key_id}")
+    @Value("${razorpay.key.id}")
     private String razorpayKeyId;
 
-    @Value("${razorpay.key_secret}")
+    @Value("${razorpay.key.secret}")
     private String razorpayKeySecret;
 
     @Transactional
