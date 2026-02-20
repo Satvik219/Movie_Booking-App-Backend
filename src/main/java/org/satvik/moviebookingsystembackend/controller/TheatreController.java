@@ -1,7 +1,9 @@
 package org.satvik.moviebookingsystembackend.controller;
 
 
+import org.satvik.moviebookingsystembackend.entity.Screen;
 import org.satvik.moviebookingsystembackend.entity.Theatre;
+import org.satvik.moviebookingsystembackend.repository.ScreenRepository;
 import org.satvik.moviebookingsystembackend.repository.TheatreRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
@@ -16,6 +18,7 @@ import java.util.List;
 public class TheatreController {
 
     private final TheatreRepository theatreRepository;
+    private final ScreenRepository screenRepository;
 
     @GetMapping
     public ResponseEntity<List<Theatre>> getAllTheatres() {
@@ -50,6 +53,22 @@ public class TheatreController {
     @PostMapping
     @PreAuthorize("hasRole('ADMIN')")
     public ResponseEntity<Theatre> createTheatre(@RequestBody Theatre theatre) {
-        return ResponseEntity.ok(theatreRepository.save(theatre));
+
+        Theatre savedTheatre = theatreRepository.save(theatre);
+
+        // Automatically create 5 screens for this theatre
+        for (int i = 1; i <= 5; i++) {
+
+            Screen screen = Screen.builder()
+                    .name("Screen " + i)
+                    .type(Screen.ScreenType.STANDARD)
+                    .totalSeats(120)
+                    .theatre(savedTheatre)
+                    .build();
+
+            screenRepository.save(screen);
+        }
+
+        return ResponseEntity.ok(savedTheatre);
     }
 }
