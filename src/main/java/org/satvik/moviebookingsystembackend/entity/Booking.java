@@ -51,6 +51,7 @@ public class Booking{
     private Payment payment;
 
     @Column(name = "booked_at")
+    @Builder.Default
     private LocalDateTime bookedAt = LocalDateTime.now();
 
     @Column(name = "cancelled_at")

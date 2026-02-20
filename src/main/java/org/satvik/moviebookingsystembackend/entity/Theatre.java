@@ -35,6 +35,7 @@ public class Theatre {
     private String phone;
 
     @Column(name = "is_active")
+    @Builder.Default
     private boolean active = true;
 
     @OneToMany(mappedBy = "theatre", cascade = CascadeType.ALL, fetch = FetchType.LAZY)

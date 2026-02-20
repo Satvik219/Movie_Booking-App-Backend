@@ -54,6 +54,7 @@ public class Movie {
     private Certificate certificate;
 
     @Column(name = "is_active")
+    @Builder.Default
     private boolean active = true;
 
     @OneToMany(mappedBy = "movie", cascade = CascadeType.ALL, fetch = FetchType.LAZY)
