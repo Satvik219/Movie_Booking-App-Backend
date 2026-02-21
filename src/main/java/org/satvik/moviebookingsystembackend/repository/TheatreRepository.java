@@ -12,7 +12,7 @@ import java.util.List;
 @Repository
 public interface TheatreRepository extends JpaRepository<Theatre, Long> {
 
-    @Query("SELECT t FROM Theatre t WHERE t.active = true ORDER BY t.name ASC")
+    @Query("SELECT DISTINCT t FROM Theatre t LEFT JOIN FETCH t.screens WHERE t.active = true ORDER BY t.name ASC")
     List<Theatre> findAllActiveTheatres();
 
     @Query("SELECT t FROM Theatre t WHERE t.city = :city AND t.active = true ORDER BY t.name ASC")
