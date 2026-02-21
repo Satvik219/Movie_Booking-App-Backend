@@ -1,10 +1,11 @@
 package org.satvik.moviebookingsystembackend.entity;
 
-
+import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import jakarta.persistence.*;
 import lombok.*;
 
+import java.util.ArrayList;
 import java.util.List;
 
 @Entity
@@ -39,11 +40,17 @@ public class Theatre {
     @Builder.Default
     private boolean active = true;
 
-    @OneToMany(mappedBy = "theatre", cascade = CascadeType.ALL, fetch = FetchType.EAGER)
-    @JsonIgnoreProperties({"theatre", "seats", "shows"})
-    private List<Screen> screens;
-
+    // LAZY is fine — repository uses LEFT JOIN FETCH t.screens
+    // @JsonIgnoreProperties on screens breaks the circular:
+    //   Theatre -> screens -> Screen.theatre -> back to Theatre (STOP)
     @OneToMany(mappedBy = "theatre", cascade = CascadeType.ALL, fetch = FetchType.LAZY)
-    @JsonIgnoreProperties("theatre")
-    private List<Show> shows;
+    @JsonIgnoreProperties({"theatre", "seats", "shows"})
+    @Builder.Default
+    private List<Screen> screens = new ArrayList<>();
+
+    // shows excluded from JSON entirely to avoid further circular refs
+    @OneToMany(mappedBy = "theatre", cascade = CascadeType.ALL, fetch = FetchType.LAZY)
+    @JsonIgnore
+    @Builder.Default
+    private List<Show> shows = new ArrayList<>();
 }
