@@ -56,12 +56,10 @@ public class PaymentService {
                     .putMetadata("bookingId", bookingId.toString())
                     .putMetadata("bookingReference", booking.getBookingReference())
                     .putMetadata("userId", booking.getUser().getId().toString())
-                    // Automatically confirm when frontend provides payment method
-                    .setAutomaticPaymentMethods(
-                            PaymentIntentCreateParams.AutomaticPaymentMethods.builder()
-                                    .setEnabled(true)
-                                    .build()
-                    )
+                    // Explicitly allow card + UPI (upi is only available for INR currency)
+                    // "card" covers credit/debit, "upi" covers all UPI apps (GPay, PhonePe etc.)
+                    .addPaymentMethodType("card")
+                    .addPaymentMethodType("upi")
                     .build();
 
             PaymentIntent paymentIntent = PaymentIntent.create(params);
