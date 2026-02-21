@@ -56,10 +56,14 @@ public class PaymentService {
                     .putMetadata("bookingId", bookingId.toString())
                     .putMetadata("bookingReference", booking.getBookingReference())
                     .putMetadata("userId", booking.getUser().getId().toString())
-                    // Explicitly allow card + UPI (upi is only available for INR currency)
-                    // "card" covers credit/debit, "upi" covers all UPI apps (GPay, PhonePe etc.)
-                    .addPaymentMethodType("card")
-                    .addPaymentMethodType("upi")
+                    // automatic_payment_methods lets Stripe show all enabled methods
+                    // including Google Pay, Apple Pay, cards — based on user's browser/device
+                    .setAutomaticPaymentMethods(
+                            PaymentIntentCreateParams.AutomaticPaymentMethods.builder()
+                                    .setEnabled(true)
+                                    .setAllowRedirects(PaymentIntentCreateParams.AutomaticPaymentMethods.AllowRedirects.NEVER)
+                                    .build()
+                    )
                     .build();
 
             PaymentIntent paymentIntent = PaymentIntent.create(params);
