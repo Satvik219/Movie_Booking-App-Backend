@@ -1,6 +1,5 @@
 package org.satvik.moviebookingsystembackend.entity;
 
-
 import jakarta.persistence.*;
 import lombok.*;
 
@@ -22,14 +21,17 @@ public class Payment {
     @JoinColumn(name = "booking_id", nullable = false)
     private Booking booking;
 
-    @Column(name = "razorpay_order_id", unique = true)
-    private String razorpayOrderId;
+    // Stripe PaymentIntent ID (replaces razorpay_order_id)
+    @Column(name = "stripe_payment_intent_id", unique = true)
+    private String stripePaymentIntentId;
 
-    @Column(name = "razorpay_payment_id")
-    private String razorpayPaymentId;
+    // Stripe Charge ID (replaces razorpay_payment_id)
+    @Column(name = "stripe_charge_id")
+    private String stripeChargeId;
 
-    @Column(name = "razorpay_signature")
-    private String razorpaySignature;
+    // Stripe client secret — sent to frontend to complete payment
+    @Column(name = "stripe_client_secret")
+    private String stripeClientSecret;
 
     @Column(nullable = false)
     private Double amount;
@@ -61,4 +63,3 @@ public class Payment {
         CARD, UPI, NET_BANKING, WALLET
     }
 }
-

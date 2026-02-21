@@ -17,22 +17,21 @@ public interface PaymentRepository extends JpaRepository<Payment, Long> {
     @Query("SELECT p FROM Payment p WHERE p.booking.id = :bookingId")
     Optional<Payment> findByBookingId(@Param("bookingId") Long bookingId);
 
-    @Query("SELECT p FROM Payment p WHERE p.razorpayOrderId = :orderId")
-    Optional<Payment> findByRazorpayOrderId(@Param("orderId") String orderId);
+    @Query("SELECT p FROM Payment p WHERE p.stripePaymentIntentId = :paymentIntentId")
+    Optional<Payment> findByStripePaymentIntentId(@Param("paymentIntentId") String paymentIntentId);
 
-    @Query("SELECT p FROM Payment p WHERE p.razorpayPaymentId = :paymentId")
-    Optional<Payment> findByRazorpayPaymentId(@Param("paymentId") String paymentId);
+    @Query("SELECT p FROM Payment p WHERE p.stripeChargeId = :chargeId")
+    Optional<Payment> findByStripeChargeId(@Param("chargeId") String chargeId);
 
     @Query("SELECT p FROM Payment p WHERE p.status = :status ORDER BY p.createdAt DESC")
     List<Payment> findByStatus(@Param("status") Payment.PaymentStatus status);
 
     @Modifying
     @Transactional
-    @Query("UPDATE Payment p SET p.status = :status, p.razorpayPaymentId = :paymentId, p.razorpaySignature = :signature, p.updatedAt = CURRENT_TIMESTAMP WHERE p.razorpayOrderId = :orderId")
-    void updatePaymentStatus(@Param("orderId") String orderId,
+    @Query("UPDATE Payment p SET p.status = :status, p.stripeChargeId = :chargeId, p.updatedAt = CURRENT_TIMESTAMP WHERE p.stripePaymentIntentId = :paymentIntentId")
+    void updatePaymentStatus(@Param("paymentIntentId") String paymentIntentId,
                              @Param("status") Payment.PaymentStatus status,
-                             @Param("paymentId") String paymentId,
-                             @Param("signature") String signature);
+                             @Param("chargeId") String chargeId);
 
     @Query("SELECT SUM(p.amount) FROM Payment p WHERE p.status = 'SUCCESS'")
     Double getTotalSuccessfulPayments();
@@ -43,4 +42,3 @@ public interface PaymentRepository extends JpaRepository<Payment, Long> {
     @Query("SELECT COUNT(p) FROM Payment p WHERE p.status = :status")
     Long countByStatus(@Param("status") Payment.PaymentStatus status);
 }
-

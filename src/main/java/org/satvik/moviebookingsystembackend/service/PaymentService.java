@@ -1,25 +1,23 @@
 package org.satvik.moviebookingsystembackend.service;
 
-
+import com.stripe.Stripe;
+import com.stripe.exception.StripeException;
+import com.stripe.model.PaymentIntent;
+import com.stripe.model.Refund;
+import com.stripe.param.PaymentIntentCreateParams;
+import com.stripe.param.RefundCreateParams;
+import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.satvik.moviebookingsystembackend.entity.Booking;
 import org.satvik.moviebookingsystembackend.entity.Payment;
 import org.satvik.moviebookingsystembackend.exception.PaymentException;
 import org.satvik.moviebookingsystembackend.exception.ResourceNotFoundException;
 import org.satvik.moviebookingsystembackend.repository.BookingRepository;
 import org.satvik.moviebookingsystembackend.repository.PaymentRepository;
-import com.razorpay.Order;
-import com.razorpay.RazorpayClient;
-import com.razorpay.RazorpayException;
-import lombok.RequiredArgsConstructor;
-import lombok.extern.slf4j.Slf4j;
-import org.json.JSONObject;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import javax.crypto.Mac;
-import javax.crypto.spec.SecretKeySpec;
-import java.nio.charset.StandardCharsets;
 import java.time.LocalDateTime;
 
 @Service
@@ -30,35 +28,48 @@ public class PaymentService {
     private final PaymentRepository paymentRepository;
     private final BookingRepository bookingRepository;
 
-    @Value("${stripe.publishable.key}")
-    private String razorpayKeyId;
-
     @Value("${stripe.api.key}")
-    private String razorpayKeySecret;
+    private String stripeSecretKey;
 
+    @Value("${stripe.publishable.key}")
+    private String stripePublishableKey;
+
+    /**
+     * Creates a Stripe PaymentIntent and saves a PENDING payment record.
+     * Returns the Payment with stripeClientSecret so the frontend can complete payment.
+     */
     @Transactional
-    public Payment createRazorpayOrder(Long bookingId) {
+    public Payment createPaymentIntent(Long bookingId) {
         Booking booking = bookingRepository.findById(bookingId)
                 .orElseThrow(() -> new ResourceNotFoundException("Booking not found: " + bookingId));
 
         try {
-            RazorpayClient razorpay = new RazorpayClient(razorpayKeyId, razorpayKeySecret);
+            Stripe.apiKey = stripeSecretKey;
 
-            JSONObject orderRequest = new JSONObject();
-            orderRequest.put("amount", (int) (booking.getFinalAmount() * 100)); // amount in paise
-            orderRequest.put("currency", "INR");
-            orderRequest.put("receipt", booking.getBookingReference());
+            // Amount must be in smallest currency unit (paise for INR)
+            long amountInPaise = Math.round(booking.getFinalAmount() * 100);
 
-            JSONObject notes = new JSONObject();
-            notes.put("bookingId", bookingId.toString());
-            notes.put("userId", booking.getUser().getId().toString());
-            orderRequest.put("notes", notes);
+            PaymentIntentCreateParams params = PaymentIntentCreateParams.builder()
+                    .setAmount(amountInPaise)
+                    .setCurrency("inr")
+                    .setDescription("Movie ticket booking - " + booking.getBookingReference())
+                    .putMetadata("bookingId", bookingId.toString())
+                    .putMetadata("bookingReference", booking.getBookingReference())
+                    .putMetadata("userId", booking.getUser().getId().toString())
+                    // Automatically confirm when frontend provides payment method
+                    .setAutomaticPaymentMethods(
+                            PaymentIntentCreateParams.AutomaticPaymentMethods.builder()
+                                    .setEnabled(true)
+                                    .build()
+                    )
+                    .build();
 
-            Order razorpayOrder = razorpay.orders.create(orderRequest);
+            PaymentIntent paymentIntent = PaymentIntent.create(params);
 
             Payment payment = Payment.builder()
                     .booking(booking)
-                    .razorpayOrderId(razorpayOrder.get("id"))
+                    .stripePaymentIntentId(paymentIntent.getId())
+                    .stripeClientSecret(paymentIntent.getClientSecret())
                     .amount(booking.getFinalAmount())
                     .currency("INR")
                     .status(Payment.PaymentStatus.PENDING)
@@ -66,94 +77,95 @@ public class PaymentService {
 
             return paymentRepository.save(payment);
 
-        } catch (RazorpayException e) {
-            log.error("Failed to create Razorpay order: {}", e.getMessage());
-            throw new PaymentException("Failed to create payment order: " + e.getMessage());
+        } catch (StripeException e) {
+            log.error("Failed to create Stripe PaymentIntent: {}", e.getMessage());
+            throw new PaymentException("Failed to create payment: " + e.getMessage());
         }
     }
 
+    /**
+     * Verifies a PaymentIntent server-side by retrieving it from Stripe.
+     * Only succeeds if Stripe reports status = "succeeded".
+     * This is safe — no signature to spoof, Stripe is the source of truth.
+     */
     @Transactional
-    public boolean verifyAndUpdatePayment(String razorpayOrderId, String razorpayPaymentId,
-                                          String razorpaySignature) {
+    public boolean verifyAndUpdatePayment(String paymentIntentId) {
         try {
-            // Verify signature
-            String payload = razorpayOrderId + "|" + razorpayPaymentId;
-            String generatedSignature = generateHmacSha256(payload, razorpayKeySecret);
+            Stripe.apiKey = stripeSecretKey;
 
-            if (!generatedSignature.equals(razorpaySignature)) {
-                log.warn("Payment signature verification failed for order: {}", razorpayOrderId);
-                paymentRepository.updatePaymentStatus(razorpayOrderId,
-                        Payment.PaymentStatus.FAILED, razorpayPaymentId, razorpaySignature);
+            PaymentIntent paymentIntent = PaymentIntent.retrieve(paymentIntentId);
+
+            Payment payment = paymentRepository.findByStripePaymentIntentId(paymentIntentId)
+                    .orElseThrow(() -> new ResourceNotFoundException("Payment not found for intent: " + paymentIntentId));
+
+            if (!"succeeded".equals(paymentIntent.getStatus())) {
+                log.warn("PaymentIntent {} has status: {}", paymentIntentId, paymentIntent.getStatus());
+                paymentRepository.updatePaymentStatus(paymentIntentId, Payment.PaymentStatus.FAILED, null);
                 return false;
             }
 
-            // Update payment status
-            paymentRepository.updatePaymentStatus(razorpayOrderId,
-                    Payment.PaymentStatus.SUCCESS, razorpayPaymentId, razorpaySignature);
+            // Extract charge ID from the PaymentIntent (the actual charge)
+            String chargeId = paymentIntent.getLatestCharge();
 
-            // Update booking status
-            Payment payment = paymentRepository.findByRazorpayOrderId(razorpayOrderId)
-                    .orElseThrow(() -> new ResourceNotFoundException("Payment not found"));
+            paymentRepository.updatePaymentStatus(paymentIntentId, Payment.PaymentStatus.SUCCESS, chargeId);
 
+            // Confirm booking
             Booking booking = payment.getBooking();
             booking.setStatus(Booking.BookingStatus.CONFIRMED);
             bookingRepository.save(booking);
 
-            log.info("Payment verified and booking confirmed: {}", booking.getBookingReference());
+            log.info("Stripe payment verified and booking confirmed: {}", booking.getBookingReference());
             return true;
 
-        } catch (Exception e) {
-            log.error("Payment verification error: {}", e.getMessage());
+        } catch (StripeException e) {
+            log.error("Stripe payment verification error: {}", e.getMessage());
             throw new PaymentException("Payment verification failed: " + e.getMessage());
         }
     }
 
+    /**
+     * Processes a refund via Stripe using the stored charge ID.
+     */
     @Transactional
     public boolean processRefund(Long bookingId) {
+        Payment payment = paymentRepository.findByBookingId(bookingId)
+                .orElseThrow(() -> new ResourceNotFoundException("Payment not found for booking: " + bookingId));
+
+        if (payment.getStatus() != Payment.PaymentStatus.SUCCESS) {
+            throw new PaymentException("Cannot refund payment with status: " + payment.getStatus());
+        }
+
         try {
-            Payment payment = paymentRepository.findByBookingId(bookingId)
-                    .orElseThrow(() -> new ResourceNotFoundException("Payment not found for booking: " + bookingId));
+            Stripe.apiKey = stripeSecretKey;
 
-            if (payment.getStatus() != Payment.PaymentStatus.SUCCESS) {
-                throw new PaymentException("Cannot refund payment with status: " + payment.getStatus());
+            RefundCreateParams params = RefundCreateParams.builder()
+                    .setPaymentIntent(payment.getStripePaymentIntentId())
+                    .setAmount(Math.round(payment.getAmount() * 100)) // paise
+                    .build();
+
+            Refund refund = Refund.create(params);
+
+            if (!"succeeded".equals(refund.getStatus())) {
+                throw new PaymentException("Refund was not successful: " + refund.getStatus());
             }
-
-            RazorpayClient razorpay = new RazorpayClient(razorpayKeyId, razorpayKeySecret);
-
-            JSONObject refundRequest = new JSONObject();
-            refundRequest.put("amount", (int) (payment.getAmount() * 100));
-            refundRequest.put("speed", "normal");
-
-            razorpay.payments.refund(payment.getRazorpayPaymentId(), refundRequest);
 
             payment.setStatus(Payment.PaymentStatus.REFUNDED);
             payment.setUpdatedAt(LocalDateTime.now());
             paymentRepository.save(payment);
 
+            log.info("Refund processed for booking {}: refund ID {}", bookingId, refund.getId());
             return true;
 
-        } catch (RazorpayException e) {
-            log.error("Refund failed: {}", e.getMessage());
+        } catch (StripeException e) {
+            log.error("Stripe refund failed: {}", e.getMessage());
             throw new PaymentException("Refund failed: " + e.getMessage());
         }
     }
 
-    private String generateHmacSha256(String data, String key) throws Exception {
-        Mac mac = Mac.getInstance("HmacSHA256");
-        SecretKeySpec secretKeySpec = new SecretKeySpec(key.getBytes(StandardCharsets.UTF_8), "HmacSHA256");
-        mac.init(secretKeySpec);
-        byte[] hash = mac.doFinal(data.getBytes(StandardCharsets.UTF_8));
-        StringBuilder hexString = new StringBuilder();
-        for (byte b : hash) {
-            String hex = Integer.toHexString(0xff & b);
-            if (hex.length() == 1) hexString.append('0');
-            hexString.append(hex);
-        }
-        return hexString.toString();
-    }
-
-    public String getRazorpayKeyId() {
-        return razorpayKeyId;
+    /**
+     * Returns the publishable key so the frontend can initialise Stripe.js
+     */
+    public String getStripePublishableKey() {
+        return stripePublishableKey;
     }
 }
-

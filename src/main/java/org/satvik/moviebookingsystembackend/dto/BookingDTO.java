@@ -29,23 +29,25 @@ public class BookingDTO {
         private Double finalAmount;
         private Booking.BookingStatus status;
         private LocalDateTime bookedAt;
-        private String razorpayOrderId;
-        private String razorpayKeyId;
+
+        // Stripe fields (replaces razorpayOrderId / razorpayKeyId)
+        private String stripePaymentIntentId;
+        private String stripeClientSecret;   // frontend passes this to stripe.confirmPayment()
+        private String stripePublishableKey; // frontend uses this to init Stripe.js
     }
 
     @Data
     public static class PaymentVerificationRequest {
-        private String razorpayOrderId;
-        private String razorpayPaymentId;
-        private String razorpaySignature;
+        // Frontend sends back the PaymentIntent ID after Stripe confirms payment
+        private String stripePaymentIntentId;
         private Long bookingId;
     }
 
     @Data
     public static class PaymentResponse {
         private Long paymentId;
-        private String razorpayOrderId;
-        private String razorpayPaymentId;
+        private String stripePaymentIntentId;
+        private String stripeChargeId;
         private Double amount;
         private Payment.PaymentStatus status;
         private String bookingReference;

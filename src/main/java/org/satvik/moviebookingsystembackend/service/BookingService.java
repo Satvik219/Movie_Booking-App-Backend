@@ -80,8 +80,8 @@ public class BookingService {
         showSeats.forEach(ss -> ss.setBooking(savedBooking));
         showSeatRepository.saveAll(showSeats);
 
-        // Create Razorpay order
-        Payment payment = paymentService.createRazorpayOrder(savedBooking.getId());
+        // Create Stripe PaymentIntent
+        Payment payment = paymentService.createPaymentIntent(savedBooking.getId());
 
         // Decrease available seats
         showRepository.decreaseAvailableSeats(show.getId(), request.getSeatIds().size());
@@ -91,10 +91,9 @@ public class BookingService {
 
     @Transactional
     public BookingDTO.BookingResponse confirmBooking(BookingDTO.PaymentVerificationRequest request) {
+        // Verify payment with Stripe (server-side retrieval — no signature needed)
         boolean paymentSuccess = paymentService.verifyAndUpdatePayment(
-                request.getRazorpayOrderId(),
-                request.getRazorpayPaymentId(),
-                request.getRazorpaySignature()
+                request.getStripePaymentIntentId()
         );
 
         Booking booking = bookingRepository.findById(request.getBookingId())
@@ -144,7 +143,7 @@ public class BookingService {
         showRepository.increaseAvailableSeats(booking.getShow().getId(),
                 booking.getShowSeats().size());
 
-        // Process refund
+        // Process Stripe refund
         paymentService.processRefund(bookingId);
     }
 
@@ -178,8 +177,9 @@ public class BookingService {
         response.setStatus(booking.getStatus());
         response.setBookedAt(booking.getBookedAt());
         if (payment != null) {
-            response.setRazorpayOrderId(payment.getRazorpayOrderId());
-            response.setRazorpayKeyId(paymentService.getRazorpayKeyId());
+            response.setStripePaymentIntentId(payment.getStripePaymentIntentId());
+            response.setStripeClientSecret(payment.getStripeClientSecret());
+            response.setStripePublishableKey(paymentService.getStripePublishableKey());
         }
         return response;
     }
