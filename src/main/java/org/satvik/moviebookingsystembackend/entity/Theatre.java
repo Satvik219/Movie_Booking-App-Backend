@@ -1,6 +1,7 @@
 package org.satvik.moviebookingsystembackend.entity;
 
 
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import jakarta.persistence.*;
 import lombok.*;
 
@@ -38,10 +39,11 @@ public class Theatre {
     @Builder.Default
     private boolean active = true;
 
-    @OneToMany(mappedBy = "theatre", cascade = CascadeType.ALL, fetch = FetchType.LAZY)
+    @OneToMany(mappedBy = "theatre", cascade = CascadeType.ALL, fetch = FetchType.EAGER)
+    @JsonIgnoreProperties({"theatre", "seats", "shows"})
     private List<Screen> screens;
 
     @OneToMany(mappedBy = "theatre", cascade = CascadeType.ALL, fetch = FetchType.LAZY)
+    @JsonIgnoreProperties("theatre")
     private List<Show> shows;
 }
-
