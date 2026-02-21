@@ -1,6 +1,7 @@
 package org.satvik.moviebookingsystembackend.entity;
 
 
+import com.fasterxml.jackson.annotation.JsonIgnore;
 import jakarta.persistence.*;
 import lombok.*;
 
@@ -29,6 +30,7 @@ public class Screen {
 
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "theatre_id", nullable = false)
+    @JsonIgnore
     private Theatre theatre;
 
     @OneToMany(mappedBy = "screen", cascade = CascadeType.ALL, fetch = FetchType.LAZY)
